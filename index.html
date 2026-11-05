@@ -716,10 +716,22 @@
 .spatial-analysis .spatial-chart .axis path,
 .spatial-analysis .spatial-chart .axis line { stroke: #98a2b3; }
 .spatial-analysis .spatial-chart .zero-line { stroke: #667085; stroke-dasharray: 3 3; }
-.spatial-analysis .spatial-chart .fit-line { stroke: #b42318; stroke-width: 2; }
+.spatial-analysis .spatial-chart .fit-line { stroke: #b42318; stroke-width: 2; stroke-dasharray: 5 3; }
 .spatial-analysis .spatial-chart .county-dot { fill: #2f5d7c; fill-opacity: 0.72; }
 .spatial-analysis .spatial-chart .histogram-bar { fill: #8fb3c9; }
 .spatial-analysis .spatial-chart .observed-line { stroke: #b42318; stroke-width: 2; }
+
+
+.spatial-analysis .analysis-scope { margin: 8px 0; color: var(--accent-dark); font-size: 12px; line-height: 1.4; font-weight: 700; }
+.spatial-analysis .analysis-mode-only[hidden] { display: none !important; }
+.spatial-analysis .analysis-charts { margin-top: 12px; padding-top: 8px; border-top: 1px solid var(--line); }
+.spatial-analysis .analysis-charts > summary { cursor: pointer; list-style: none; font-size: 12px; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.spatial-analysis .analysis-charts > summary::after { content: "+"; }
+.spatial-analysis .analysis-charts[open] > summary::after { content: "−"; }
+.spatial-analysis .spatial-chart .analysis-chart-point { fill: #2f5d7c; fill-opacity: 0.72; cursor: pointer; }
+.spatial-analysis .analysis-chart-point.chart-active { fill: #d94801; fill-opacity: 1; stroke: #fff; stroke-width: 1px; }
+.county.analysis-highlight { stroke: #d94801 !important; stroke-width: 2.8 !important; }
+.bridge-point.analysis-highlight { stroke: #d94801 !important; stroke-width: 2.8 !important; fill-opacity: 1 !important; }
 
 </style>
 </head>
@@ -847,20 +859,38 @@
 
       <details class="panel-section spatial-analysis" id="spatialAnalysisSection">
         <summary>Spatial analysis</summary>
-        <p class="analysis-note">Global Moran’s I measures statewide spatial autocorrelation. It does not identify local hotspots or imply causation.</p>
-        <label for="analysisVariableSelect">County variable</label>
-        <select id="analysisVariableSelect">
-          <option value="br_poorper" selected>Poor-condition bridge %</option>
-          <option value="fd_50per">50-year modeled closure %</option>
-          <option value="fd_100per">100-year modeled closure %</option>
-          <option value="fd_500per">500-year modeled closure %</option>
-          <option value="br_age">Average bridge age</option>
-        </select>
-        <label for="spatialWeightsSelect">County neighbors</label>
-        <select id="spatialWeightsSelect">
-          <option value="queen" selected>Queen contiguity</option>
-          <option value="rook">Rook contiguity</option>
-        </select>
+        <p class="analysis-note">The analysis follows Display mode: County summary uses all Iowa counties; Bridge points uses records in the selected county. Existing map selections set the county.</p>
+        <p id="spatialAnalysisScope" class="analysis-scope" aria-live="polite">Preparing county and bridge data…</p>
+        <div id="countyAnalysisControls">
+          <p class="analysis-note">Uses the current County variable selection above. Changing that map variable changes the analysis too.</p>
+          <label for="spatialWeightsSelect">County neighbors</label>
+          <select id="spatialWeightsSelect">
+            <option value="queen" selected>Queen contiguity</option>
+            <option value="rook">Rook contiguity</option>
+          </select>
+        </div>
+        <div id="bridgeAnalysisControls" class="analysis-mode-only" hidden>
+          <p class="analysis-note">Bridge records are filtered by <code>brcounty</code> to match the selected County for bridge points above.</p>
+          <label for="bridgeAnalysisVariableSelect">Bridge measure</label>
+          <select id="bridgeAnalysisVariableSelect">
+            <option value="poor_flag" selected>Poor-condition indicator (Poor = 1)</option>
+            <option value="brage">Bridge age (years)</option>
+            <option value="bradt">Average daily traffic</option>
+            <option value="bradt_log1p">Log(1 + average daily traffic)</option>
+            <option value="closure_severity">Modeled closure severity (0–3 scenarios)</option>
+            <option value="br50">50-year modeled closure indicator</option>
+            <option value="br100">100-year modeled closure indicator</option>
+            <option value="br500">500-year modeled closure indicator</option>
+          </select>
+          <label for="bridgeNeighborCountSelect">Nearest bridges per bridge</label>
+          <select id="bridgeNeighborCountSelect">
+            <option value="4">4</option>
+            <option value="6">6</option>
+            <option value="8" selected>8</option>
+            <option value="12">12</option>
+          </select>
+          <p class="analysis-note">K-nearest neighbors use the projected bridge coordinates and are symmetrized before row standardization. Detour length is omitted until special code 99 is documented.</p>
+        </div>
         <label for="permutationCountSelect">Random permutations</label>
         <select id="permutationCountSelect">
           <option value="199">199</option>
@@ -869,22 +899,27 @@
         </select>
         <label for="randomSeedInput">Random seed</label>
         <input id="randomSeedInput" type="number" min="1" step="1" value="54321" />
-        <button id="runSpatialAnalysis" type="button" style="margin-top:10px;">Run Global Moran’s I</button>
-        <div id="spatialAnalysisStatus" class="analysis-status" role="status" aria-live="polite">Ready to analyze the 99 Iowa counties.</div>
+        <button id="runSpatialAnalysis" type="button" style="margin-top:10px;">Run analysis for current display mode</button>
+        <div id="spatialAnalysisStatus" class="analysis-status" role="status" aria-live="polite">Ready.</div>
         <div id="spatialAnalysisResults" class="analysis-results" hidden>
+          <p id="spatialResultScope" class="analysis-scope"></p>
           <div class="analysis-metrics">
             <div class="analysis-metric"><strong id="moranStatistic">--</strong><span>Observed Moran’s I</span></div>
             <div class="analysis-metric"><strong id="moranPValue">--</strong><span>Upper-tail pseudo-p</span></div>
-            <div class="analysis-metric"><strong id="moranCount">--</strong><span>Counties and neighbors</span></div>
+            <div class="analysis-metric"><strong id="moranCount">--</strong><span>Observations and neighbor pairs</span></div>
             <div class="analysis-metric"><strong id="moranSettings">--</strong><span>Permutations and seed</span></div>
           </div>
           <p id="moranInterpretation" class="analysis-interpretation"></p>
-          <h3>Moran scatterplot</h3>
-          <svg id="moranScatterplot" class="spatial-chart" viewBox="0 0 360 240" role="img" aria-label="County Moran scatterplot"></svg>
-          <h3>Permutation distribution</h3>
-          <p class="analysis-note">The red marker is the observed statistic.</p>
-          <svg id="moranPermutationPlot" class="spatial-chart" viewBox="0 0 360 210" role="img" aria-label="Permutation distribution with observed Moran statistic"></svg>
-          <p class="analysis-note">Weights use row-standardized county neighbors prepared from IowaCounty.json (EPSG:26915). Queen uses shared boundary vertices; Rook uses shared boundary segments. The p-value is upper-tail with a plus-one correction; 999 permutations have 0.001 resolution. Flood values are modeled scenarios, not observed bridge failures. County results do not establish bridge-level effects or causation.</p>
+          <details id="spatialDiagnosticCharts" class="analysis-charts">
+            <summary>Diagnostic charts</summary>
+            <h3 id="moranScatterTitle">Moran scatterplot</h3>
+            <p class="analysis-note">Red fitted line slope = observed I. Hover over or click a dot to locate that county or bridge on the map.</p>
+            <svg id="moranScatterplot" class="spatial-chart" viewBox="0 0 360 240" role="img" aria-label="Moran scatterplot"></svg>
+            <h3>Permutation distribution</h3>
+            <p class="analysis-note">The red vertical line marks the observed statistic; it is not a cutoff or a bridge value.</p>
+            <svg id="moranPermutationPlot" class="spatial-chart" viewBox="0 0 360 210" role="img" aria-label="Permutation distribution with observed Moran statistic"></svg>
+          </details>
+          <p class="analysis-note">The upper-tail permutation p-value uses a plus-one correction. Global Moran’s I describes spatial association for the selected scope; it does not identify local hotspots or establish causation.</p>
         </div>
       </details>
 
@@ -1058,6 +1093,9 @@
       projection: null,
       path: null,
       selectedCounty: null,
+      analysisSelectedBridge: null,
+      spatialResult: null,
+      spatialRunToken: 0,
       transform: d3.zoomIdentity
     };
 
@@ -1178,8 +1216,18 @@
       d3.select("#statsBtn").on("click", () => openStats(false));
       d3.select("#statsIowaBtn").on("click", () => openStats(true));
       document.querySelector("#runSpatialAnalysis").addEventListener("click", runSpatialAnalysis);
-      ["#analysisVariableSelect", "#spatialWeightsSelect", "#permutationCountSelect", "#randomSeedInput"]
-        .forEach(selector => document.querySelector(selector).addEventListener("change", markSpatialAnalysisOutdated));
+      ["#layerModeSelect", "#pointCountySelect", "#countyVariableSelect", "#spatialWeightsSelect",
+        "#bridgeAnalysisVariableSelect", "#bridgeNeighborCountSelect", "#permutationCountSelect", "#randomSeedInput"]
+        .forEach(selector => document.querySelector(selector).addEventListener("change", () => {
+          const pointMode = value("#layerModeSelect") === "point";
+          if (selector === "#layerModeSelect" ||
+              (selector === "#pointCountySelect" && pointMode) ||
+              (selector === "#countyVariableSelect" && !pointMode) ||
+              !["#pointCountySelect", "#countyVariableSelect"].includes(selector)) {
+            markSpatialAnalysisOutdated("Selection or settings changed. Run the analysis again.");
+          }
+          updateSpatialAnalysisControls();
+        }));
 
       d3.select("#manualBreakBoxes").on("input", () => {
         render();
@@ -1194,12 +1242,36 @@
     }
 
 
-    function markSpatialAnalysisOutdated() {
-      const results = document.querySelector("#spatialAnalysisResults");
-      if (!results.hidden) {
-        results.hidden = true;
-        setSpatialAnalysisStatus("Settings changed. Run the analysis again to refresh the results.");
+    function updateSpatialAnalysisControls() {
+      if (!state.counties || !state.bridges) return;
+      const pointMode = value("#layerModeSelect") === "point";
+      document.querySelector("#countyAnalysisControls").hidden = pointMode;
+      document.querySelector("#bridgeAnalysisControls").hidden = !pointMode;
+
+      if (pointMode) {
+        const county = value("#pointCountySelect") || state.selectedCounty || "";
+        const points = state.bridges.features.filter(feature => feature.properties.brcounty === county);
+        const countySummary = state.counties.features.find(feature => feature.properties.CountyName === county);
+        const expected = countySummary ? Number(countySummary.properties.Bridge) : NaN;
+        const countNote = Number.isFinite(expected) && expected !== points.length
+          ? ` County summary count is ${expected.toLocaleString()}, so check the source records.`
+          : "";
+        document.querySelector("#spatialAnalysisScope").textContent = `${county || "No county selected"} County · ${points.length.toLocaleString()} bridge records matched by brcounty.${countNote}`;
+        document.querySelector("#runSpatialAnalysis").textContent = `Run analysis for ${county || "selected county"}`;
+      } else {
+        const count = state.counties.features.length;
+        const variable = value("#countyVariableSelect");
+        document.querySelector("#spatialAnalysisScope").textContent = `All ${count} county summaries · current map variable: ${labelForCounty(variable)}. A selected map county does not filter this statewide run.`;
+        document.querySelector("#runSpatialAnalysis").textContent = "Run analysis for all Iowa counties";
       }
+    }
+
+    function markSpatialAnalysisOutdated(message = "Selection or settings changed. Run the analysis again.") {
+      const results = document.querySelector("#spatialAnalysisResults");
+      results.hidden = true;
+      state.spatialResult = null;
+      state.spatialRunToken += 1;
+      setSpatialAnalysisStatus(message);
     }
 
     function setSpatialAnalysisStatus(message, isError = false) {
@@ -1212,23 +1284,67 @@
     async function runSpatialAnalysis() {
       const button = document.querySelector("#runSpatialAnalysis");
       const results = document.querySelector("#spatialAnalysisResults");
+      const pointMode = value("#layerModeSelect") === "point";
+      const runToken = ++state.spatialRunToken;
+      const county = value("#pointCountySelect") || state.selectedCounty;
+      const pointVariable = value("#bridgeAnalysisVariableSelect");
+      const pointNeighbors = value("#bridgeNeighborCountSelect");
+      const countyVariable = value("#countyVariableSelect");
+      const countyWeights = value("#spatialWeightsSelect");
+      const permutations = value("#permutationCountSelect");
+      const seed = value("#randomSeedInput");
       button.disabled = true;
       results.hidden = true;
-      setSpatialAnalysisStatus("Loading prepared county neighbors and calculating permutations…");
+      state.spatialResult = null;
+      document.querySelector("#spatialDiagnosticCharts").open = false;
+      setSpatialAnalysisStatus("Preparing selected data and calculating permutations…");
 
       try {
         if (!window.IbisSpatialAnalysis) throw new Error("The spatial-analysis module did not load.");
-        const adjacency = await d3.json("spatial-weights.json");
-        const result = window.IbisSpatialAnalysis.calculate(state.counties.features, adjacency, {
-          variable: value("#analysisVariableSelect"),
-          weights: value("#spatialWeightsSelect"),
-          permutations: value("#permutationCountSelect"),
-          seed: value("#randomSeedInput")
-        });
+        let result;
+        if (pointMode) {
+          if (!county) throw new Error("Select a county in County for bridge points first.");
+          const features = state.bridges.features.filter(feature => feature.properties.brcounty === county);
+          const variable = pointVariable;
+          const labels = {
+            poor_flag: "Poor-condition bridge indicator (Poor = 1)",
+            brage: "Bridge age (years)",
+            bradt: "Average daily traffic",
+            bradt_log1p: "Log(1 + average daily traffic)",
+            closure_severity: "Modeled closure severity (0–3 scenarios)",
+            br50: "50-year modeled closure indicator",
+            br100: "100-year modeled closure indicator",
+            br500: "500-year modeled closure indicator"
+          };
+          result = window.IbisSpatialAnalysis.calculateBridgeCounty(features, {
+            variable,
+            variableLabel: labels[variable],
+            neighbors: pointNeighbors,
+            permutations,
+            seed
+          });
+          const countySummary = state.counties.features.find(feature => feature.properties.CountyName === county);
+          result.scopeLabel = `${county} County bridge records selected with brcounty (${result.n} observations)`;
+          result.countyName = county;
+          result.countMismatch = countySummary && Number(countySummary.properties.Bridge) !== result.n;
+        } else {
+          const adjacency = await d3.json("spatial-weights.json");
+          const variable = countyVariable;
+          result = window.IbisSpatialAnalysis.calculate(state.counties.features, adjacency, {
+            variable,
+            variableLabel: labelForCounty(variable),
+            weights: value("#spatialWeightsSelect"),
+            permutations,
+            seed
+          });
+          result.scopeLabel = `All Iowa counties (${result.n} county observations)`;
+        }
+        if (runToken !== state.spatialRunToken) return;
+        state.spatialResult = result;
         renderSpatialAnalysis(result);
         results.hidden = false;
-        const label = result.weights === "queen" ? "Queen" : "Rook";
-        setSpatialAnalysisStatus(`Analysis complete: ${label} weights, ${result.pairCount} neighbor pairs, ${result.permutations} permutations.`);
+        const mismatch = result.countMismatch ? " County summary and brcounty record counts differ; review the source data." : "";
+        setSpatialAnalysisStatus(`Analysis complete for ${result.scopeLabel}; ${result.weights}, ${result.pairCount} neighbor pairs.${mismatch}`);
       } catch (error) {
         setSpatialAnalysisStatus(`Analysis could not run: ${error.message}`, true);
       } finally {
@@ -1239,26 +1355,64 @@
     function renderSpatialAnalysis(result) {
       document.querySelector("#moranStatistic").textContent = d3.format(".4f")(result.observed);
       document.querySelector("#moranPValue").textContent = d3.format(".3f")(result.pValue);
-      document.querySelector("#moranCount").textContent = `${result.n} counties · ${result.pairCount} pairs`;
+      const unit = result.unit === "bridge" ? "bridges" : "counties";
+      document.querySelector("#moranCount").textContent = `${result.n} ${unit} · ${result.pairCount} pairs`;
       document.querySelector("#moranSettings").textContent = `${result.permutations} · seed ${result.seed}`;
+      document.querySelector("#spatialResultScope").textContent = `${result.scopeLabel} · ${result.variableLabel} · ${result.weights}`;
+      document.querySelector("#moranScatterTitle").textContent = result.unit === "bridge"
+        ? `Bridge Moran scatterplot · ${result.countyName} County`
+        : "County Moran scatterplot · Iowa";
 
-      const label = labelForCounty(result.variable);
-      const weightLabel = result.weights === "queen" ? "Queen" : "Rook";
       const conclusion = result.pValue <= 0.05 && result.observed > 0
-        ? `This run indicates positive global spatial autocorrelation in ${label.toLowerCase()} under ${weightLabel} contiguity (upper-tail p ≤ 0.05). This statewide result does not identify local hotspots.`
-        : `This run does not provide evidence of positive global spatial autocorrelation in ${label.toLowerCase()} at the 0.05 level under ${weightLabel} contiguity. It does not test for local hotspots.`;
+        ? `This run indicates positive global spatial autocorrelation in ${result.variableLabel.toLowerCase()} under the selected weights (upper-tail p ≤ 0.05). This ${result.unit === "bridge" ? "within-county" : "statewide"} result does not identify local hotspots.`
+        : `This run does not provide evidence of positive global spatial autocorrelation in ${result.variableLabel.toLowerCase()} at the 0.05 level under the selected weights. It does not test for local hotspots.`;
       document.querySelector("#moranInterpretation").textContent = conclusion;
       drawMoranScatterplot(result);
       drawMoranPermutationPlot(result);
+    }
+
+    function setAnalysisMapHighlight(result, point, active) {
+      if (result.unit === "county") {
+        gCounties.selectAll("path.county").classed("analysis-highlight", active
+          ? feature => String(feature.properties.FIPS).padStart(5, "0") === point.id
+          : false);
+        return;
+      }
+      const matching = gPoints.selectAll("circle.bridge-point").filter(feature => String(feature.properties.brid) === point.id);
+      matching.classed("analysis-highlight", active);
+      if (active && !matching.empty()) matching.raise();
+    }
+
+    function selectAnalysisMapFeature(result, point) {
+      if (result.unit === "county") {
+        const feature = state.counties.features.find(item => String(item.properties.FIPS).padStart(5, "0") === point.id);
+        if (!feature) return;
+        state.selectedCounty = feature.properties.CountyName;
+        d3.select("#pointCountySelect").property("value", state.selectedCounty);
+        if (value("#layerModeSelect") === "point") {
+          markSpatialAnalysisOutdated("Selected county changed. Run the analysis again for the new county.");
+          zoomToFeature(feature);
+        }
+        updateSpatialAnalysisControls();
+        render();
+        return;
+      }
+      state.analysisSelectedBridge = point.id;
+      const matching = gPoints.selectAll("circle.bridge-point").filter(feature => String(feature.properties.brid) === point.id);
+      gPoints.selectAll("circle.bridge-point").classed("analysis-highlight", false);
+      matching.classed("analysis-highlight", true).raise();
+      if (matching.empty() && value("#heatmapToggle") === "on") {
+        setSpatialAnalysisStatus("The selected bridge is in the analysis, but the point heatmap hides individual bridge markers. Turn the heatmap off to locate it.");
+      }
     }
 
     function drawMoranScatterplot(result) {
       const svg = d3.select("#moranScatterplot");
       svg.selectAll("*").remove();
       const width = 360, height = 240;
-      const margin = { top: 12, right: 14, bottom: 42, left: 48 };
-      const xExtent = d3.extent(result.scatter, d => d.x);
-      const yExtent = d3.extent(result.scatter, d => d.y);
+      const margin = { top: 12, right: 14, bottom: 46, left: 50 };
+      const xExtent = d3.extent(result.scatter, point => point.x);
+      const yExtent = d3.extent(result.scatter, point => point.y);
       const pad = extent => {
         const span = extent[1] - extent[0] || 1;
         const domain = [Math.min(0, extent[0]), Math.max(0, extent[1])];
@@ -1275,8 +1429,10 @@
         .attr("x1", margin.left).attr("x2", width - margin.right).attr("y1", y(0)).attr("y2", y(0));
       plot.append("g").attr("class", "axis").attr("transform", `translate(0,${height - margin.bottom})`).call(d3.axisBottom(x).ticks(5));
       plot.append("g").attr("class", "axis").attr("transform", `translate(${margin.left},0)`).call(d3.axisLeft(y).ticks(5));
-      plot.append("text").attr("x", (margin.left + width - margin.right) / 2).attr("y", height - 5).attr("text-anchor", "middle").text("Standardized county value");
-      plot.append("text").attr("transform", "rotate(-90)").attr("x", -(margin.top + height - margin.bottom) / 2).attr("y", 12).attr("text-anchor", "middle").text("Centered spatial lag");
+      plot.append("text").attr("x", (margin.left + width - margin.right) / 2).attr("y", height - 6).attr("text-anchor", "middle")
+        .text("Standardized value");
+      plot.append("text").attr("transform", "rotate(-90)").attr("x", -(margin.top + height - margin.bottom) / 2).attr("y", 12).attr("text-anchor", "middle")
+        .text("Centered spatial lag");
 
       const slope = result.observed;
       const yCrossings = slope === 0 ? [] : [yDomain[0] / slope, yDomain[1] / slope].sort(d3.ascending);
@@ -1284,14 +1440,24 @@
       const lineEnd = slope === 0 ? NaN : Math.min(xDomain[1], yCrossings[1]);
       if (Number.isFinite(lineStart) && Number.isFinite(lineEnd) && lineStart < lineEnd) {
         plot.append("line").attr("class", "fit-line")
-          .attr("x1", x(lineStart)).attr("y1", y(result.observed * lineStart))
-          .attr("x2", x(lineEnd)).attr("y2", y(result.observed * lineEnd));
+          .attr("x1", x(lineStart)).attr("y1", y(slope * lineStart))
+          .attr("x2", x(lineEnd)).attr("y2", y(slope * lineEnd));
       }
 
-      plot.selectAll("circle.county-dot").data(result.scatter).join("circle")
-        .attr("class", "county-dot").attr("r", 2.5)
-        .attr("cx", d => x(d.x)).attr("cy", d => y(d.y))
-        .append("title").text(d => `${d.name} County (${d.fips}): value ${d3.format(".2f")(d.x)}, lag ${d3.format(".2f")(d.y)}`);
+      plot.selectAll("circle.analysis-chart-point").data(result.scatter).join("circle")
+        .attr("class", point => "analysis-chart-point" + (result.unit === "bridge" && point.id === state.analysisSelectedBridge ? " chart-active" : ""))
+        .attr("r", result.unit === "bridge" ? 2.1 : 2.7)
+        .attr("cx", point => x(point.x)).attr("cy", point => y(point.y))
+        .on("mouseenter", function(event, point) {
+          d3.select(this).classed("chart-active", true);
+          setAnalysisMapHighlight(result, point, true);
+        })
+        .on("mouseleave", function(event, point) {
+          d3.select(this).classed("chart-active", result.unit === "bridge" && point.id === state.analysisSelectedBridge);
+          setAnalysisMapHighlight(result, point, false);
+        })
+        .on("click", (event, point) => selectAnalysisMapFeature(result, point))
+        .append("title").text(point => `${point.label} · source value=${d3.format(".5g")(point.rawValue)} · analysis value=${d3.format(".5g")(point.analysisValue)} · x=${d3.format(".2f")(point.x)}, lag=${d3.format(".2f")(point.y)}`);
     }
 
     function drawMoranPermutationPlot(result) {
@@ -1311,7 +1477,9 @@
         .attr("height", bin => y(0) - y(bin.length));
       svg.append("g").attr("class", "axis").attr("transform", `translate(0,${height - margin.bottom})`).call(d3.axisBottom(x).ticks(5));
       svg.append("g").attr("class", "axis").attr("transform", `translate(${margin.left},0)`).call(d3.axisLeft(y).ticks(4));
-      svg.append("line").attr("class", "observed-line").attr("x1", x(result.observed)).attr("x2", x(result.observed)).attr("y1", margin.top).attr("y2", height - margin.bottom)
+      svg.append("line").attr("class", "observed-line")
+        .attr("x1", x(result.observed)).attr("x2", x(result.observed))
+        .attr("y1", margin.top).attr("y2", height - margin.bottom)
         .append("title").text(`Observed Moran’s I: ${d3.format(".4f")(result.observed)}`);
       svg.append("text").attr("x", (margin.left + width - margin.right) / 2).attr("y", height - 3).attr("text-anchor", "middle").text("Simulated Moran’s I");
     }
@@ -1342,6 +1510,7 @@
 
       populateColorSchemeOptions(isBivar ? "bivariate" : "single");
       updateManualBreakBoxes();
+      updateSpatialAnalysisControls();
       if (layerMode !== "point") clearHeatmap();
     }
 
@@ -1429,8 +1598,16 @@
         .on("click", (event, d) => {
           state.selectedCounty = d.properties.CountyName;
           d3.select("#pointCountySelect").property("value", state.selectedCounty);
-          if (value("#layerModeSelect") === "point") zoomToFeature(d);
+          if (value("#layerModeSelect") === "point") {
+            markSpatialAnalysisOutdated("Selected county changed. Run the analysis again for the new county.");
+            zoomToFeature(d);
+          }
+          updateSpatialAnalysisControls();
           render();
+          if (state.spatialResult && state.spatialResult.unit === "county") {
+            d3.select("#moranScatterplot").selectAll(".analysis-chart-point")
+              .classed("chart-active", point => point.id === String(d.properties.FIPS).padStart(5, "0"));
+          }
         });
     }
 
@@ -1450,13 +1627,19 @@
       gPoints.selectAll("circle")
         .data(points, d => d.properties.brid)
         .join("circle")
-        .attr("class", "bridge-point")
+        .attr("class", d => "bridge-point" + (String(d.properties.brid) === state.analysisSelectedBridge ? " analysis-highlight" : ""))
         .attr("cx", d => state.projection(d.geometry.coordinates)[0])
         .attr("cy", d => state.projection(d.geometry.coordinates)[1])
         .attr("r", d => radius(d))
         .attr("fill", d => color(d))
         .on("mousemove", (event, d) => showBridgeTooltip(event, d))
-        .on("mouseleave", hideTooltip);
+        .on("mouseleave", hideTooltip)
+        .on("click", (event, d) => {
+          state.analysisSelectedBridge = String(d.properties.brid);
+          gPoints.selectAll("circle.bridge-point").classed("analysis-highlight", feature => String(feature.properties.brid) === state.analysisSelectedBridge);
+          d3.select("#moranScatterplot").selectAll(".analysis-chart-point")
+            .classed("chart-active", point => point.id === state.analysisSelectedBridge);
+        });
     }
 
 
