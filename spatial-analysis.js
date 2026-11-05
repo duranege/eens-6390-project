@@ -12,9 +12,17 @@
     };
   }
 
+  const knnCache = new WeakMap();
+
   function buildKnn(features, requestedK) {
     const n = features.length;
     const k = Math.max(2, Math.min(Math.floor(Number(requestedK) || 8), n - 1));
+    let countyCache = knnCache.get(features);
+    if (!countyCache) {
+      countyCache = new Map();
+      knnCache.set(features, countyCache);
+    }
+    if (countyCache.has(k)) return countyCache.get(k);
     const coordinates = features.map(feature => {
       const xy = feature.geometry && feature.geometry.coordinates;
       if (!Array.isArray(xy) || !Number.isFinite(Number(xy[0])) || !Number.isFinite(Number(xy[1]))) {
@@ -40,7 +48,9 @@
         pairs.add(i < item.index ? `${i}:${item.index}` : `${item.index}:${i}`);
       }
     }
-    return { neighborIndices: neighbors.map(items => Array.from(items).sort((a, b) => a - b)), pairCount: pairs.size, k };
+    const result = { neighborIndices: neighbors.map(items => Array.from(items).sort((a, b) => a - b)), pairCount: pairs.size, k };
+    countyCache.set(k, result);
+    return result;
   }
 
   function bridgeValue(feature, variable) {
@@ -164,11 +174,13 @@
     }
 
     function statistic(input) {
-      const lag = spatialLag(input);
       let crossProduct = 0;
       let sumSquares = 0;
       for (let index = 0; index < input.length; index += 1) {
-        crossProduct += input[index] * lag[index];
+        const neighbors = neighborIndices[index];
+        let lag = 0;
+        for (const neighbor of neighbors) lag += input[neighbor];
+        crossProduct += input[index] * (lag / neighbors.length);
         sumSquares += input[index] * input[index];
       }
       return crossProduct / sumSquares;
